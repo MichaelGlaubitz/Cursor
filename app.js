@@ -1,15 +1,22 @@
-const STORAGE_KEY = "unterrichtsmanager_6c_performance_data";
+const DEFAULT_OWNER = "MichaelGlaubitz";
+const STORAGE_KEY = "project_dashboard_token";
 
-const csvFileInput = document.querySelector("#csv-file-input");
-const csvTextInput = document.querySelector("#csv-text-input");
-const importButton = document.querySelector("#import-button");
-const clearButton = document.querySelector("#clear-button");
+const ownerInput = document.querySelector("#owner-input");
+const tokenInput = document.querySelector("#token-input");
+const searchInput = document.querySelector("#search-input");
+const sortSelect = document.querySelector("#sort-select");
+const loadButton = document.querySelector("#load-button");
+const clearTokenButton = document.querySelector("#clear-token-button");
+const activeOwner = document.querySelector("#active-owner");
 const statusText = document.querySelector("#status-text");
 const statsGrid = document.querySelector("#stats-grid");
-const studentCount = document.querySelector("#student-count");
-const studentsTableBody = document.querySelector("#students-table-body");
+const languageBars = document.querySelector("#language-bars");
+const repoList = document.querySelector("#repo-list");
+const repoCount = document.querySelector("#repo-count");
+const cardTemplate = document.querySelector("#repo-card-template");
 
-let studentRows = [];
+let repositories = [];
+let filteredRepositories = [];
 
 function setStatus(message, type = "info") {
   statusText.textContent = message;
@@ -19,44 +26,110 @@ function setStatus(message, type = "info") {
   }
 }
 
-function formatPercent(value) {
-  if (typeof value !== "number" || Number.isNaN(value)) {
-    return "n/a";
-  }
-  return `${value.toFixed(1)} %`;
-}
-
-function formatDate(date) {
+function formatDate(isoDateString) {
   return new Intl.DateTimeFormat("de-DE", {
     dateStyle: "medium",
     timeStyle: "short",
-  }).format(date);
+  }).format(new Date(isoDateString));
 }
 
-function renderStats(rows) {
-  const validScores = rows.filter((row) => typeof row.percent === "number");
-  const supportThreshold = 60;
-  const needSupport = validScores.filter((row) => row.percent < supportThreshold).length;
-  const avg =
-    validScores.length === 0
-      ? null
-      : validScores.reduce((sum, row) => sum + row.percent, 0) / validScores.length;
-  const topStudent = validScores.reduce((best, row) => {
-    if (!best) return row;
-    return row.percent > best.percent ? row : best;
+function upsertStoredToken() {
+  const token = tokenInput.value.trim();
+  if (!token) {
+    localStorage.removeItem(STORAGE_KEY);
+    return "";
+  }
+
+  localStorage.setItem(STORAGE_KEY, token);
+  return token;
+}
+
+function loadStoredToken() {
+  const token = localStorage.getItem(STORAGE_KEY);
+  if (token) {
+    tokenInput.value = token;
+  }
+}
+
+function buildHeaders(token) {
+  const headers = {
+    Accept: "application/vnd.github+json",
+  };
+
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  return headers;
+}
+
+async function fetchReposForOwner(owner, token) {
+  const headers = buildHeaders(token);
+  let page = 1;
+  let collected = [];
+
+  while (true) {
+    const url = `https://api.github.com/users/${encodeURIComponent(owner)}/repos?per_page=100&page=${page}&sort=created&direction=desc`;
+    const response = await fetch(url, { headers });
+
+    if (!response.ok) {
+      let message = `Fehler ${response.status}`;
+      try {
+        const payload = await response.json();
+        if (payload.message) {
+          message = payload.message;
+        }
+      } catch (_error) {
+        // Ignore JSON parse errors to keep original message.
+      }
+      throw new Error(message);
+    }
+
+    const chunk = await response.json();
+    collected = collected.concat(chunk);
+
+    if (chunk.length < 100) {
+      break;
+    }
+
+    page += 1;
+  }
+
+  return collected;
+}
+
+function computeStats(items) {
+  const total = items.length;
+  const forks = items.filter((repo) => repo.fork).length;
+  const originals = total - forks;
+  const privateCount = items.filter((repo) => repo.private).length;
+  const totalStars = items.reduce((sum, repo) => sum + repo.stargazers_count, 0);
+  const mostRecent = items.reduce((latest, repo) => {
+    if (!latest) return repo;
+    return new Date(repo.created_at) > new Date(latest.created_at) ? repo : latest;
   }, null);
-  const timestamp = rows.length > 0 ? formatDate(new Date()) : "n/a";
+
+  return {
+    total,
+    forks,
+    originals,
+    privateCount,
+    totalStars,
+    newestName: mostRecent?.name || "n/a",
+    newestDate: mostRecent ? formatDate(mostRecent.created_at) : "n/a",
+  };
+}
+
+function renderStats(items) {
+  const stats = computeStats(items);
 
   const cards = [
-    { label: "Schüler gesamt", value: rows.length },
-    { label: "Ausgewertete Scores", value: validScores.length },
-    { label: "Durchschnitt", value: formatPercent(avg) },
-    {
-      label: "Beste Leistung",
-      value: topStudent ? `${topStudent.name} (${formatPercent(topStudent.percent)})` : "n/a",
-    },
-    { label: "Unter 60 %", value: needSupport },
-    { label: "Importzeitpunkt", value: timestamp },
+    { label: "Gesamt", value: stats.total },
+    { label: "Original-Projekte", value: stats.originals },
+    { label: "Forks", value: stats.forks },
+    { label: "Private Repos", value: stats.privateCount },
+    { label: "Sterne gesamt", value: stats.totalStars },
+    { label: "Neuestes Projekt", value: `${stats.newestName} (${stats.newestDate})` },
   ];
 
   statsGrid.innerHTML = "";
@@ -71,278 +144,211 @@ function renderStats(rows) {
 
     const value = document.createElement("p");
     value.className = "stat-value";
-    value.textContent = String(entry.value ?? "n/a");
+    value.textContent = String(entry.value);
 
     card.append(title, value);
     statsGrid.appendChild(card);
   });
 }
 
-function detectHint(percent) {
-  if (typeof percent !== "number" || Number.isNaN(percent)) {
-    return "Kein numerischer Score erkannt";
-  }
-  if (percent < 50) return "Förderbedarf";
-  if (percent < 75) return "Ausbaufähig";
-  if (percent < 90) return "Gut";
-  return "Sehr gut";
+function collectLanguageStats(items) {
+  const map = new Map();
+
+  items.forEach((repo) => {
+    const key = repo.language || "Unbekannt";
+    map.set(key, (map.get(key) || 0) + 1);
+  });
+
+  return [...map.entries()].sort((a, b) => b[1] - a[1]);
 }
 
-function renderTable(rows) {
-  studentsTableBody.innerHTML = "";
-  studentCount.textContent = `${rows.length} Schüler`;
+function renderLanguageBars(items) {
+  const languageData = collectLanguageStats(items);
+  languageBars.innerHTML = "";
 
-  if (rows.length === 0) {
-    studentsTableBody.innerHTML = `
-      <tr>
-        <td colspan="4" class="placeholder">Noch keine Leistungsdaten geladen.</td>
-      </tr>
-    `;
+  if (languageData.length === 0) {
+    languageBars.innerHTML = `<p class="placeholder">Keine Spracheinträge vorhanden.</p>`;
     return;
   }
 
-  const sortedRows = [...rows].sort((a, b) => {
-    const scoreA = typeof a.percent === "number" ? a.percent : -1;
-    const scoreB = typeof b.percent === "number" ? b.percent : -1;
-    return scoreB - scoreA;
+  const maxCount = languageData[0][1];
+  languageData.forEach(([language, count]) => {
+    const wrapper = document.createElement("div");
+    wrapper.className = "language-row";
+
+    const label = document.createElement("span");
+    label.className = "language-label";
+    label.textContent = `${language} (${count})`;
+
+    const barTrack = document.createElement("div");
+    barTrack.className = "language-track";
+
+    const bar = document.createElement("div");
+    bar.className = "language-fill";
+    bar.style.width = `${Math.max((count / maxCount) * 100, 6)}%`;
+
+    barTrack.appendChild(bar);
+    wrapper.append(label, barTrack);
+    languageBars.appendChild(wrapper);
   });
+}
+
+function getTopics(repo) {
+  if (Array.isArray(repo.topics)) {
+    return repo.topics;
+  }
+  return [];
+}
+
+function matchesSearch(repo, query) {
+  if (!query) return true;
+
+  const normalized = query.toLowerCase();
+  const topics = getTopics(repo).join(" ").toLowerCase();
+  const description = (repo.description || "").toLowerCase();
+
+  return (
+    repo.name.toLowerCase().includes(normalized) ||
+    (repo.language || "").toLowerCase().includes(normalized) ||
+    description.includes(normalized) ||
+    topics.includes(normalized)
+  );
+}
+
+function applySorting(items, sortValue) {
+  const cloned = [...items];
+
+  switch (sortValue) {
+    case "updated_desc":
+      cloned.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
+      break;
+    case "stars_desc":
+      cloned.sort((a, b) => b.stargazers_count - a.stargazers_count);
+      break;
+    case "name_asc":
+      cloned.sort((a, b) => a.name.localeCompare(b.name, "de-DE"));
+      break;
+    case "created_desc":
+    default:
+      cloned.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+      break;
+  }
+
+  return cloned;
+}
+
+function renderRepoCards(items) {
+  repoList.innerHTML = "";
+  repoCount.textContent = `${items.length} Einträge`;
+
+  if (items.length === 0) {
+    repoList.innerHTML = `<p class="placeholder">Keine Projekte für den aktuellen Filter gefunden.</p>`;
+    return;
+  }
 
   const fragment = document.createDocumentFragment();
-  sortedRows.forEach((row) => {
-    const tr = document.createElement("tr");
-    const scoreText = typeof row.percent === "number" ? formatPercent(row.percent) : "n/a";
-    const hint = detectHint(row.percent);
+  items.forEach((repo) => {
+    const node = cardTemplate.content.firstElementChild.cloneNode(true);
+    node.querySelector(".repo-name").textContent = repo.name;
 
-    [row.name, scoreText, row.raw ?? "n/a", hint].forEach((value) => {
-      const cell = document.createElement("td");
-      cell.textContent = value;
-      tr.appendChild(cell);
+    const link = node.querySelector(".repo-link");
+    link.href = repo.html_url;
+
+    node.querySelector(".repo-description").textContent =
+      repo.description || "Keine Beschreibung hinterlegt.";
+
+    const metaEntries = [
+      `Sprache: ${repo.language || "Unbekannt"}`,
+      `Sterne: ${repo.stargazers_count}`,
+      `Forks: ${repo.forks_count}`,
+      `Erstellt: ${formatDate(repo.created_at)}`,
+      `Aktualisiert: ${formatDate(repo.updated_at)}`,
+      repo.private ? "Privat" : "Öffentlich",
+      repo.fork ? "Fork" : "Original",
+    ];
+    const metaNode = node.querySelector(".repo-meta");
+    metaEntries.forEach((entry) => {
+      const badge = document.createElement("span");
+      badge.className = "badge";
+      badge.textContent = entry;
+      metaNode.appendChild(badge);
     });
-    fragment.appendChild(tr);
+
+    const topicsNode = node.querySelector(".repo-topics");
+    const topics = getTopics(repo);
+    if (topics.length === 0) {
+      topicsNode.textContent = "Keine Topics";
+    } else {
+      topics.forEach((topic) => {
+        const tag = document.createElement("span");
+        tag.className = "topic";
+        tag.textContent = topic;
+        topicsNode.appendChild(tag);
+      });
+    }
+
+    fragment.appendChild(node);
   });
 
-  studentsTableBody.appendChild(fragment);
+  repoList.appendChild(fragment);
 }
 
-function resetDashboard() {
-  renderStats([]);
-  renderTable([]);
-}
-
-function safeLower(value) {
-  return value.toLowerCase().replace(/\s+/g, " ").trim();
-}
-
-function findHeaderIndex(headers, aliases) {
-  const normalized = headers.map((header) => safeLower(header));
-  return normalized.findIndex((header) => aliases.some((alias) => header.includes(alias)));
-}
-
-function parseLine(line, delimiter) {
-  const values = [];
-  let current = "";
-  let inQuotes = false;
-
-  for (let i = 0; i < line.length; i += 1) {
-    const char = line[i];
-    if (char === '"') {
-      const isEscapedQuote = line[i + 1] === '"';
-      if (isEscapedQuote) {
-        current += '"';
-        i += 1;
-      } else {
-        inQuotes = !inQuotes;
-      }
-      continue;
-    }
-    if (!inQuotes && char === delimiter) {
-      values.push(current.trim());
-      current = "";
-      continue;
-    }
-    current += char;
-  }
-  values.push(current.trim());
-  return values;
-}
-
-function countDelimiter(sample, delimiter) {
-  let count = 0;
-  let inQuotes = false;
-  for (let i = 0; i < sample.length; i += 1) {
-    const char = sample[i];
-    if (char === '"') inQuotes = !inQuotes;
-    if (!inQuotes && char === delimiter) count += 1;
-  }
-  return count;
-}
-
-function detectDelimiter(text) {
-  const firstLine = text.split(/\r?\n/).find((line) => line.trim().length > 0) || "";
-  const candidates = [",", ";", "\t"];
-  let best = ",";
-  let bestCount = -1;
-  candidates.forEach((delimiter) => {
-    const count = countDelimiter(firstLine, delimiter);
-    if (count > bestCount) {
-      bestCount = count;
-      best = delimiter;
-    }
-  });
-  return best;
-}
-
-function parsePercent(rawValue) {
-  if (!rawValue) return null;
-  const normalized = rawValue.replace(/\s+/g, "").replace(",", ".");
-  if (normalized.includes("/")) {
-    const [left, right] = normalized.split("/");
-    const numerator = Number(left);
-    const denominator = Number(right);
-    if (
-      Number.isFinite(numerator) &&
-      Number.isFinite(denominator) &&
-      denominator !== 0
-    ) {
-      return (numerator / denominator) * 100;
-    }
-  }
-
-  const numeric = Number(normalized.replace("%", ""));
-  if (Number.isFinite(numeric)) return numeric;
-  return null;
-}
-
-function parsePlickersCsv(csvText) {
-  const cleaned = csvText.replace(/^\uFEFF/, "").trim();
-  if (!cleaned) {
-    throw new Error("Die CSV ist leer.");
-  }
-
-  const delimiter = detectDelimiter(cleaned);
-  const lines = cleaned.split(/\r?\n/).filter((line) => line.trim().length > 0);
-  const matrix = lines.map((line) => parseLine(line, delimiter));
-  if (matrix.length === 0) {
-    throw new Error("Keine Datenzeilen gefunden.");
-  }
-
-  const firstRow = matrix[0].map((cell) => cell.trim());
-  const hasHeader = firstRow.some((cell) =>
-    /(name|student|sch[üu]ler|score|prozent|leistung|percent|correct|total)/i.test(cell)
+function updateFilteredView() {
+  const query = searchInput.value.trim();
+  const sorted = applySorting(
+    repositories.filter((repo) => matchesSearch(repo, query)),
+    sortSelect.value
   );
 
-  const headers = hasHeader
-    ? firstRow
-    : firstRow.map((_, index) => `spalte_${index + 1}`);
-  const contentRows = hasHeader ? matrix.slice(1) : matrix;
-
-  const nameIndex = Math.max(
-    0,
-    findHeaderIndex(headers, ["name", "student", "schüler", "schueler"])
-  );
-  const scoreIndex = findHeaderIndex(headers, [
-    "score (%)",
-    "score",
-    "prozent",
-    "leistung",
-    "percent",
-    "overall",
-  ]);
-  const rawIndex = findHeaderIndex(headers, ["correct/total", "raw", "rohwert", "correct"]);
-
-  const rows = contentRows
-    .map((row) => {
-      const name = (row[nameIndex] || "").trim();
-      const rawPrimary = scoreIndex >= 0 ? row[scoreIndex] || "" : row[1] || "";
-      const rawFallback = rawIndex >= 0 ? row[rawIndex] || "" : rawPrimary;
-      const percent = parsePercent(rawPrimary) ?? parsePercent(rawFallback);
-
-      return {
-        name,
-        percent,
-        raw: (rawPrimary || rawFallback || "").trim() || "n/a",
-      };
-    })
-    .filter((row) => row.name.length > 0);
-
-  if (rows.length === 0) {
-    throw new Error("Es konnten keine Schülerdaten erkannt werden.");
-  }
-
-  return rows;
+  filteredRepositories = sorted;
+  renderStats(filteredRepositories);
+  renderLanguageBars(filteredRepositories);
+  renderRepoCards(filteredRepositories);
 }
 
-function loadStoredRows() {
-  const raw = localStorage.getItem(STORAGE_KEY);
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed;
-  } catch (_error) {
-    return [];
-  }
-}
+async function loadDashboard() {
+  const owner = ownerInput.value.trim() || DEFAULT_OWNER;
+  const token = upsertStoredToken();
+  activeOwner.textContent = owner;
 
-function persistRows(rows) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(rows));
-}
-
-async function readSelectedFile() {
-  const file = csvFileInput.files?.[0];
-  if (!file) return "";
-  return file.text();
-}
-
-async function importPerformanceData() {
-  importButton.disabled = true;
-  setStatus("Importiere Leistungsdaten aus CSV ...");
+  setStatus("Lade Repositories von GitHub ...");
+  loadButton.disabled = true;
 
   try {
-    const pasted = csvTextInput.value.trim();
-    const fileText = pasted ? "" : await readSelectedFile();
-    const csv = pasted || fileText;
-    if (!csv) {
-      throw new Error("Bitte CSV-Datei auswählen oder Inhalt einfügen.");
-    }
-
-    studentRows = parsePlickersCsv(csv);
-    persistRows(studentRows);
-    renderStats(studentRows);
-    renderTable(studentRows);
+    repositories = await fetchReposForOwner(owner, token);
+    updateFilteredView();
     setStatus(
-      `Import erfolgreich: ${studentRows.length} Schüler aus der Klasse 6c erfasst.`,
+      `Erfolgreich geladen: ${repositories.length} Repository-Einträge für ${owner}.`,
       "success"
     );
   } catch (error) {
-    setStatus(`Import fehlgeschlagen: ${error.message}`, "error");
+    repositories = [];
+    filteredRepositories = [];
+    renderStats([]);
+    renderLanguageBars([]);
+    renderRepoCards([]);
+    setStatus(`Fehler beim Laden: ${error.message}`, "error");
   } finally {
-    importButton.disabled = false;
+    loadButton.disabled = false;
   }
 }
 
 function bootstrap() {
-  studentRows = loadStoredRows();
-  if (studentRows.length > 0) {
-    renderStats(studentRows);
-    renderTable(studentRows);
-    setStatus(
-      `Vorhandene Daten geladen: ${studentRows.length} Schüler für Klasse 6c.`,
-      "success"
-    );
-  } else {
-    resetDashboard();
-  }
+  loadStoredToken();
+  renderStats([]);
+  renderLanguageBars([]);
+  renderRepoCards([]);
 
-  importButton.addEventListener("click", importPerformanceData);
-  clearButton.addEventListener("click", () => {
-    studentRows = [];
-    csvFileInput.value = "";
-    csvTextInput.value = "";
+  loadButton.addEventListener("click", loadDashboard);
+  clearTokenButton.addEventListener("click", () => {
+    tokenInput.value = "";
     localStorage.removeItem(STORAGE_KEY);
-    resetDashboard();
-    setStatus("Alle importierten Leistungsdaten wurden gelöscht.");
+    setStatus("Token wurde aus dem Browser-Speicher entfernt.");
   });
+  searchInput.addEventListener("input", updateFilteredView);
+  sortSelect.addEventListener("change", updateFilteredView);
+
+  loadDashboard();
 }
 
 bootstrap();
