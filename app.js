@@ -162,6 +162,52 @@ function collectLanguageStats(items) {
   return [...map.entries()].sort((a, b) => b[1] - a[1]);
 }
 
+function toSentences(text) {
+  if (!text) {
+    return [];
+  }
+
+  return (text.match(/[^.!?]+[.!?]*/g) || [])
+    .map((sentence) => sentence.trim().replace(/\s+/g, " "))
+    .filter(Boolean)
+    .map((sentence) => (/[.!?]$/.test(sentence) ? sentence : `${sentence}.`));
+}
+
+function pluralize(count, singular, plural) {
+  return count === 1 ? singular : plural;
+}
+
+function buildRepoSummary(repo) {
+  const sentences = [];
+  const baseDescription = toSentences(repo.description || "");
+  baseDescription.slice(0, 2).forEach((sentence) => {
+    if (sentences.length < 3) {
+      sentences.push(sentence);
+    }
+  });
+
+  if (sentences.length < 3) {
+    const visibility = repo.private ? "privates" : "oeffentliches";
+    const origin = repo.fork ? "Fork-Projekt" : "Original-Projekt";
+    const language = repo.language || "nicht angegebener Sprache";
+    const starsLabel = pluralize(repo.stargazers_count, "Stern", "Sterne");
+    sentences.push(
+      `Dieses Repository ist ein ${visibility} ${origin} in ${language} und hat aktuell ${repo.stargazers_count} ${starsLabel}.`
+    );
+  }
+
+  if (sentences.length < 3) {
+    const topicCount = getTopics(repo).length;
+    const topicLabel = pluralize(topicCount, "Topic", "Topics");
+    const updatedAt = formatDate(repo.updated_at);
+    const topicInfo =
+      topicCount > 0 ? ` und verwendet ${topicCount} ${topicLabel}` : "";
+    sentences.push(`Es wurde zuletzt am ${updatedAt} aktualisiert${topicInfo}.`);
+  }
+
+  return sentences.slice(0, 3).join(" ");
+}
+
 function renderLanguageBars(items) {
   const languageData = collectLanguageStats(items);
   languageBars.innerHTML = "";
@@ -254,8 +300,7 @@ function renderRepoCards(items) {
     const link = node.querySelector(".repo-link");
     link.href = repo.html_url;
 
-    node.querySelector(".repo-description").textContent =
-      repo.description || "Keine Beschreibung hinterlegt.";
+    node.querySelector(".repo-description").textContent = buildRepoSummary(repo);
 
     const metaEntries = [
       `Sprache: ${repo.language || "Unbekannt"}`,
