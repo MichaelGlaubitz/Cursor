@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Projekt-Dashboard</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="layout">
+      <header class="hero">
+        <div>
+          <p class="kicker">GitHub-Portfolio</p>
+          <h1>Projekt-Dashboard</h1>
+          <p class="subtitle">
+            Alle gestarteten Projekte unterhalb von
+            <strong id="active-owner">MichaelGlaubitz</strong>
+          </p>
+        </div>
+      </header>
+
+      <section class="panel controls">
+        <div class="field-group">
+          <label for="owner-input">GitHub-Owner</label>
+          <input id="owner-input" type="text" value="MichaelGlaubitz" />
+        </div>
+        <div class="field-group token-field">
+          <label for="token-input">Token (optional, für private Repos)</label>
+          <input
+            id="token-input"
+            type="password"
+            placeholder="ghp_..."
+            autocomplete="off"
+          />
+        </div>
+        <div class="field-group search-field">
+          <label for="search-input">Suche</label>
+          <input
+            id="search-input"
+            type="search"
+            placeholder="Projektname, Sprache oder Topic"
+          />
+        </div>
+        <div class="field-group sort-field">
+          <label for="sort-select">Sortierung</label>
+          <select id="sort-select">
+            <option value="created_desc">Neueste zuerst (erstellt)</option>
+            <option value="updated_desc">Neueste zuerst (aktualisiert)</option>
+            <option value="stars_desc">Meiste Sterne zuerst</option>
+            <option value="name_asc">Name A-Z</option>
+          </select>
+        </div>
+        <div class="button-row">
+          <button id="load-button" type="button">Dashboard laden</button>
+          <button id="clear-token-button" type="button" class="ghost">
+            Token entfernen
+          </button>
+        </div>
+      </section>
+
+      <section class="panel status">
+        <p id="status-text">Bereit.</p>
+      </section>
+
+      <section id="stats-grid" class="stats-grid" aria-live="polite"></section>
+
+      <section class="panel languages">
+        <h2>Sprachenverteilung</h2>
+        <div id="language-bars" class="language-bars">
+          <p class="placeholder">Noch keine Daten geladen.</p>
+        </div>
+      </section>
+
+      <section class="panel repos">
+        <div class="repos-header">
+          <h2>Projekte</h2>
+          <p id="repo-count">0 Einträge</p>
+        </div>
+        <div id="repo-list" class="repo-list" aria-live="polite">
+          <p class="placeholder">Noch keine Daten geladen.</p>
+        </div>
+      </section>
+    </main>
+
+    <template id="repo-card-template">
+      <article class="repo-card">
+        <div class="repo-card-top">
+          <h3 class="repo-name"></h3>
+          <a class="repo-link" target="_blank" rel="noreferrer">GitHub</a>
+        </div>
+        <p class="repo-description"></p>
+        <div class="repo-meta"></div>
+        <div class="repo-topics"></div>
+      </article>
+    </template>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
