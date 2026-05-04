@@ -3,96 +3,83 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Projekt-Dashboard</title>
+    <title>Unterrichtsmanager 6c</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
     <main class="layout">
       <header class="hero">
-        <div>
-          <p class="kicker">GitHub-Portfolio</p>
-          <h1>Projekt-Dashboard</h1>
-          <p class="subtitle">
-            Alle gestarteten Projekte unterhalb von
-            <strong id="active-owner">MichaelGlaubitz</strong>
-          </p>
-        </div>
+        <p class="kicker">Klassenorganisation</p>
+        <h1>Unterrichtsmanager Klasse 6c</h1>
+        <p class="subtitle">
+          Leistungsdaten aus Plickers importieren und sofort auswerten.
+        </p>
       </header>
 
-      <section class="panel controls">
-        <div class="field-group">
-          <label for="owner-input">GitHub-Owner</label>
-          <input id="owner-input" type="text" value="MichaelGlaubitz" />
-        </div>
-        <div class="field-group token-field">
-          <label for="token-input">Token (optional, für private Repos)</label>
-          <input
-            id="token-input"
-            type="password"
-            placeholder="ghp_..."
-            autocomplete="off"
-          />
-        </div>
-        <div class="field-group search-field">
-          <label for="search-input">Suche</label>
-          <input
-            id="search-input"
-            type="search"
-            placeholder="Projektname, Sprache oder Topic"
-          />
-        </div>
-        <div class="field-group sort-field">
-          <label for="sort-select">Sortierung</label>
-          <select id="sort-select">
-            <option value="created_desc">Neueste zuerst (erstellt)</option>
-            <option value="updated_desc">Neueste zuerst (aktualisiert)</option>
-            <option value="stars_desc">Meiste Sterne zuerst</option>
-            <option value="name_asc">Name A-Z</option>
-          </select>
+      <section class="panel">
+        <h2>1) Verbindung mit Plickers</h2>
+        <p class="info-text">
+          Plickers stellt aktuell keinen frei dokumentierten API-Zugang bereit.
+          Der verlässliche Standardweg ist der CSV-Export aus der Scoresheet-Ansicht.
+        </p>
+        <ol class="steps">
+          <li>In Plickers anmelden und zur Scoresheet-Ansicht wechseln.</li>
+          <li>Klasse „6c“ und Zeitraum auswählen.</li>
+          <li>„Export Data to CSV“ herunterladen.</li>
+          <li>CSV hier hochladen oder einfügen.</li>
+        </ol>
+        <div class="import-grid">
+          <div class="field-group">
+            <label for="csv-file-input">CSV-Datei hochladen</label>
+            <input id="csv-file-input" type="file" accept=".csv,text/csv" />
+          </div>
+          <div class="field-group">
+            <label for="csv-text-input">Oder CSV-Inhalt einfügen</label>
+            <textarea
+              id="csv-text-input"
+              rows="7"
+              placeholder="Name,Score (%)
+Anna,84
+Ben,72"
+            ></textarea>
+          </div>
         </div>
         <div class="button-row">
-          <button id="load-button" type="button">Dashboard laden</button>
-          <button id="clear-token-button" type="button" class="ghost">
-            Token entfernen
-          </button>
+          <button id="import-button" type="button">Leistungsdaten importieren</button>
+          <button id="clear-button" type="button" class="ghost">Daten löschen</button>
         </div>
       </section>
 
       <section class="panel status">
-        <p id="status-text">Bereit.</p>
+        <p id="status-text">Bereit für den Import der Plickers-Leistungsdaten.</p>
       </section>
 
       <section id="stats-grid" class="stats-grid" aria-live="polite"></section>
 
-      <section class="panel languages">
-        <h2>Sprachenverteilung</h2>
-        <div id="language-bars" class="language-bars">
-          <p class="placeholder">Noch keine Daten geladen.</p>
+      <section class="panel">
+        <div class="table-header">
+          <h2>2) Leistungsübersicht Klasse 6c</h2>
+          <p id="student-count" class="meta-text">0 Schüler</p>
         </div>
-      </section>
-
-      <section class="panel repos">
-        <div class="repos-header">
-          <h2>Projekte</h2>
-          <p id="repo-count">0 Einträge</p>
-        </div>
-        <div id="repo-list" class="repo-list" aria-live="polite">
-          <p class="placeholder">Noch keine Daten geladen.</p>
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Leistung (%)</th>
+                <th>Rohwert</th>
+                <th>Hinweis</th>
+              </tr>
+            </thead>
+            <tbody id="students-table-body">
+              <tr>
+                <td colspan="4" class="placeholder">Noch keine Leistungsdaten geladen.</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </section>
     </main>
-
-    <template id="repo-card-template">
-      <article class="repo-card">
-        <div class="repo-card-top">
-          <h3 class="repo-name"></h3>
-          <a class="repo-link" target="_blank" rel="noreferrer">GitHub</a>
-        </div>
-        <p class="repo-description"></p>
-        <div class="repo-meta"></div>
-        <div class="repo-topics"></div>
-      </article>
-    </template>
 
     <script type="module" src="./app.js"></script>
   </body>
