@@ -63,6 +63,61 @@ function buildHeaders(token) {
   return headers;
 }
 
+async function fetchReadmeSnippet(owner, repoName, token) {
+  const headers = buildHeaders(token);
+  headers.Accept = "application/vnd.github.raw+json";
+
+  try {
+    const url = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repoName)}/readme`;
+    const response = await fetch(url, { headers });
+    if (!response.ok) return "";
+
+    const text = await response.text();
+    const lines = text.split("\n");
+    const paragraphs = [];
+    let current = [];
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (trimmed === "") {
+        if (current.length > 0) {
+          paragraphs.push(current.join(" "));
+          current = [];
+        }
+        continue;
+      }
+      if (/^#{1,6}\s/.test(trimmed)) {
+        if (current.length > 0) {
+          paragraphs.push(current.join(" "));
+          current = [];
+        }
+        continue;
+      }
+      if (/^[!\[<]/.test(trimmed)) continue;
+      if (/^[-*]\s/.test(trimmed)) continue;
+      if (/^```/.test(trimmed)) continue;
+      if (/^\|/.test(trimmed)) continue;
+      current.push(trimmed);
+    }
+    if (current.length > 0) {
+      paragraphs.push(current.join(" "));
+    }
+
+    const snippet = paragraphs.find((p) => p.length >= 20) || "";
+    return snippet.length > 300 ? snippet.slice(0, 297) + "…" : snippet;
+  } catch (_error) {
+    return "";
+  }
+}
+
+async function enrichWithReadmeSnippets(owner, repos, token) {
+  const tasks = repos.map(async (repo) => {
+    const snippet = await fetchReadmeSnippet(owner, repo.name, token);
+    repo._readmeSnippet = snippet;
+  });
+  await Promise.all(tasks);
+}
+
 async function fetchReposForOwner(owner, token) {
   const headers = buildHeaders(token);
   let page = 1;
@@ -254,8 +309,9 @@ function renderRepoCards(items) {
     const link = node.querySelector(".repo-link");
     link.href = repo.html_url;
 
-    node.querySelector(".repo-description").textContent =
-      repo.description || "Keine Beschreibung hinterlegt.";
+    const descriptionText =
+      repo._readmeSnippet || repo.description || "Keine Beschreibung hinterlegt.";
+    node.querySelector(".repo-description").textContent = descriptionText;
 
     const metaEntries = [
       `Sprache: ${repo.language || "Unbekannt"}`,
@@ -316,6 +372,11 @@ async function loadDashboard() {
 
   try {
     repositories = await fetchReposForOwner(owner, token);
+    updateFilteredView();
+    setStatus(
+      `Erfolgreich geladen: ${repositories.length} Repository-Einträge für ${owner}. Lade Projektbeschreibungen …`
+    );
+    await enrichWithReadmeSnippets(owner, repositories, token);
     updateFilteredView();
     setStatus(
       `Erfolgreich geladen: ${repositories.length} Repository-Einträge für ${owner}.`,
